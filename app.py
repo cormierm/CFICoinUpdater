@@ -2,34 +2,39 @@ import logging
 import requests
 import datetime
 import time
-import pymysql 
+import pymysql
+import json
 
 
-# Database config
-DB_HOST = '192.168.10.10'
-DB_PORT = '3306'
-DB_USER = 'homestead'
-DB_PASS = 'secret'
-DB_NAME = 'cfi'
-
-CYCLE_DELAY = 60 * 5  # delay in seconds between cycles
 LOG_FILENAME = 'output.log'
+CONFIG_FILENAME = 'config.json'
 BASE_API_URL = 'https://api.coinmarketcap.com/v1/ticker/'
-COIN_LIMIT = 1000  # maximum number of coins to get from coin market cap
+
 
 # logger setup
 logging.basicConfig(filename=LOG_FILENAME, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("app")
 
+# load config file
+config = {}
+with open(CONFIG_FILENAME, 'r') as f:
+    try:
+        config = json.load(f)
+        logger.info('Config successfully loaded')
+    except Exception as e:
+        logger.error('Error loading config file: {}'.format(e))
 
 def main():
+    url = '{}?convert=CAD&limit={}'.format(BASE_API_URL, config['coin_limit'])
+    logger.info('Using API url: {}'.format(url))
+
     while True:
         # get current database currency list
         coins = get_database_coins()
 
         # retrieve current coin data from coin market cap api
-        market_data = get_market_data()
+        market_data = get_market_data(url)
 
         # insert missing coins into database
         for coin in market_data:
@@ -42,27 +47,23 @@ def main():
         # insert market data
         db_insert_market_data(coins, market_data)
 
-        info_msg = 'Sleeping for {} seconds'.format(CYCLE_DELAY)
+        info_msg = 'Sleeping for {} seconds'.format(config['cycle_delay'])
         logger.info(info_msg)
-        print('[{}]: {}'.format(datetime.datetime.now(), info_msg))
-        time.sleep(CYCLE_DELAY)
+        time.sleep(config['cycle_delay'])
 
 
 def db_insert_market_data(coins, market_data):
     info_msg = 'Inserting market data into database'
-    timestamp = datetime.datetime.now()
-    print('[{}]: {}'.format(timestamp, info_msg))
     logger.info(info_msg)
+
+    timestamp = datetime.datetime.now()
 
     sql = ("INSERT INTO coin_prices (`currency_id`, `rank`, `price_btc`, `price_usd`, `price_cad`, `market_cap_usd`, "
            "`market_cap_cad`, `volume_usd`, `volume_cad`, `available_supply`, `total_supply`, `max_supply`, "
            "`percent_change_hour`, `percent_change_day`, `percent_change_week`, `created_at`) "
            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
 
-    db = pymysql.connect(host=DB_HOST,
-                         user=DB_USER,
-                         password=DB_PASS,
-                         db=DB_NAME)
+    db = get_db_connection()
 
     cursor = db.cursor()
 
@@ -82,7 +83,6 @@ def db_insert_market_data(coins, market_data):
                 db.rollback()
                 error_msg = 'DB insert market data error: {} - {}'.format(md['id'], e)
                 logger.error(error_msg)
-                print(error_msg)
 
     db.close()
 
@@ -101,17 +101,14 @@ def get_database_coins():
 
 def insert_coin(coin):
     info_msg = 'Inserting coin into database: {}'.format(coin['id'])
-    timestamp = datetime.datetime.now()
-    print('[{}]: {}'.format(timestamp, info_msg))
     logger.info(info_msg)
+
+    timestamp = datetime.datetime.now()
 
     sql = ("INSERT INTO currencies (`name`, `symbol`, `currency_type_id`, `coin_market_cap_id`, `created_at`) "
            "VALUES (%s, %s, %s, %s, %s)")
 
-    db = pymysql.connect(host=DB_HOST,
-                         user=DB_USER,
-                         password=DB_PASS,
-                         db=DB_NAME)
+    db = get_db_connection()
 
     cursor = db.cursor()
 
@@ -122,7 +119,6 @@ def insert_coin(coin):
       db.rollback()
       error_msg = 'DB coin insert error: {}'.format(e)
       logger.error(error_msg)
-      print(error_msg)
 
     db.close()
 
@@ -130,10 +126,7 @@ def insert_coin(coin):
 def get_db_currencies():
     sql = "SELECT * FROM currencies"
 
-    db = pymysql.connect(host=DB_HOST,
-                         user=DB_USER,
-                         password=DB_PASS,
-                         db=DB_NAME)
+    db = get_db_connection()
 
     cursor = db.cursor()
 
@@ -143,26 +136,28 @@ def get_db_currencies():
     except Exception as e:
       error_msg = 'DB insert error: {}'.format(e)
       logger.error(error_msg)
-      print(error_msg)
+
+    db.close()
 
 
-def get_market_data():
+def get_db_connection():
+    db = pymysql.connect(host=config['database']['host'],
+                         user=config['database']['user'],
+                         password=config['database']['password'],
+                         db=config['database']['db_name'])
+    return db
+
+
+def get_market_data(url):
     info_msg = 'Retrieving list from CoinMarketCap API'
-    timestamp = datetime.datetime.now()
-    print('[{}]: {}'.format(timestamp, info_msg))
     logger.info(info_msg)
 
     try:
-        return requests.get(build_api_url(COIN_LIMIT)).json()
+        return requests.get(url).json()
     except Exception as e:
         error_msg = 'Error retrieving list from CoinMarketCap: {}'.format(e)
-        print(error_msg)
         logger.error(error_msg)
         return None
-
-
-def build_api_url(limit=100):
-    return '{}?convert=CAD&limit={}'.format(BASE_API_URL, limit)
 
 
 if __name__ == '__main__':
