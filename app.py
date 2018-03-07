@@ -5,17 +5,17 @@ import time
 import pymysql 
 
 
+# Database config
 DB_HOST = '192.168.10.10'
 DB_PORT = '3306'
 DB_USER = 'homestead'
 DB_PASS = 'secret'
 DB_NAME = 'cfi'
-CONFIG_FILENAME = ''
+
 CYCLE_DELAY = 60 * 5  # delay in seconds between cycles
 LOG_FILENAME = 'output.log'
 BASE_API_URL = 'https://api.coinmarketcap.com/v1/ticker/'
-CURRENCY = 'CAD'
-COIN_LIMIT = 1000
+COIN_LIMIT = 1000  # maximum number of coins to get from coin market cap
 
 # logger setup
 logging.basicConfig(filename=LOG_FILENAME, level=logging.INFO,
@@ -162,7 +162,7 @@ def get_market_data():
 
 
 def build_api_url(limit=100):
-    return '{}?convert={}&limit={}'.format(BASE_API_URL, CURRENCY, limit)
+    return '{}?convert=CAD&limit={}'.format(BASE_API_URL, limit)
 
 
 if __name__ == '__main__':
